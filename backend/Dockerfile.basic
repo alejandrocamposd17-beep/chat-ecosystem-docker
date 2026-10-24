@@ -1,0 +1,28 @@
+# ===========================================================
+# Dockerfile BASICO (solo para comparacion, NO usar en produccion)
+# Representa el enfoque inicial del equipo: una sola etapa.
+# ===========================================================
+# Imagen completa de Debian (no Alpine)
+FROM php:8.3-fpm
+
+# Herramientas de compilacion y utilidades que se quedan en la imagen final
+RUN apt-get update && apt-get install -y git unzip zip libzip-dev
+RUN docker-php-ext-install pdo_mysql zip
+
+# Composer queda instalado dentro de la imagen de produccion
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www/html
+
+# Se copia todo antes de instalar: cualquier cambio invalida la cache
+COPY . .
+
+# Instala tambien dependencias de desarrollo (PHPUnit, Faker, etc.)
+RUN composer install
+
+RUN chmod -R 777 storage bootstrap/cache
+
+EXPOSE 8000
+
+# Servidor de desarrollo de PHP, sin Nginx ni OPcache
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]

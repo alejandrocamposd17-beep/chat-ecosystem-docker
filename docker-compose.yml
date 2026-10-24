@@ -1,0 +1,88 @@
+name: chat-ecosystem
+
+services:
+  # ---------------------------------------------------------
+  # Base de datos: MySQL 8.0 (sin puerto expuesto al host)
+  # ---------------------------------------------------------
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  # ---------------------------------------------------------
+  # API REST: Laravel + PHP-FPM + Nginx
+  # ---------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+    image: chat-api:1.0
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${API_PUBLIC_URL}
+      LOG_CHANNEL: stderr
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      SEED_DATABASE: ${SEED_DATABASE:-true}
+      CHAT_SELF_USER_ID: ${CHAT_SELF_USER_ID:-1}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks:
+      - backend
+      - frontend
+
+  # ---------------------------------------------------------
+  # Frontend: Next.js standalone
+  # ---------------------------------------------------------
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: chat-web:1.0
+    restart: unless-stopped
+    environment:
+      # Usada por Server Components (red interna de Docker)
+      API_INTERNAL_URL: http://api:8000/api
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    networks:
+      - frontend
+
+volumes:
+  db_data:
+
+networks:
+  # La base de datos solo vive en "backend": el frontend no puede alcanzarla
+  backend:
+  frontend:

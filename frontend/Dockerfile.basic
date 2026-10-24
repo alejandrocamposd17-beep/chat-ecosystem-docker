@@ -1,0 +1,25 @@
+# ===========================================================
+# Dockerfile BASICO (solo para comparacion, NO usar en produccion)
+# Representa el enfoque inicial del equipo: una sola etapa.
+# ===========================================================
+# Imagen completa de Debian (no Alpine)
+FROM node:24
+
+WORKDIR /app
+
+# Se copia todo el proyecto antes de instalar dependencias:
+# cualquier cambio en el codigo invalida la cache de npm install
+COPY . .
+
+# Instala dependencias de desarrollo y produccion
+RUN npm install
+
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+RUN npm run build
+
+EXPOSE 3000
+
+# Corre como root, con node_modules completos y el codigo fuente dentro
+CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
