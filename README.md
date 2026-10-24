@@ -49,6 +49,8 @@ flowchart LR
 ├── .env.example
 ├── compare-images.sh               # Comparación básica vs multi-stage
 ├── README.md
+├── image-comparison.md             # Resultados de compare-images.sh
+├── docs/                           # Capturas de evidencia
 ├── frontend/                       # Next.js (App Router)
 │   ├── Dockerfile
 │   ├── Dockerfile.basic            # Versión "antes", solo para comparar
@@ -98,8 +100,8 @@ Los API Resources devuelven exactamente las claves de las interfaces TypeScript 
 
 1. Clonar el repositorio:
    ```bash
-   git clone <url-del-repo>
-   cd chat-ecosystem
+   git clone https://github.com/alejandrocamposd17-beep/chat-ecosystem-docker.git
+   cd chat-ecosystem-docker
    ```
 2. Crear el archivo de variables y cambiar las contraseñas:
    ```bash
@@ -197,6 +199,7 @@ Validaciones realizadas durante el desarrollo:
 - `next build` con `output: "standalone"` compila sin la API levantada.
 - El servidor standalone (`node server.js`) se probó contra una API con la misma forma de respuestas: renderiza la lista de chats, la conversación y el estado de error.
 - TypeScript y ESLint sin errores; sintaxis de todos los archivos PHP validada con `php -l`.
+- El ecosistema completo se levantó con `docker compose up`: los tres servicios quedaron `healthy` y se verificó el flujo navegador -> API -> MySQL enviando un mensaje desde el chat (ver Evidencias).
 
 | Medición | Tamaño |
 |---|---|
@@ -219,7 +222,7 @@ El script imprime la tabla y la guarda en `image-comparison.md`. Ambas versiones
 **Qué demuestra cada columna:**
 
 - **Tamaño**: efecto de Alpine, del build standalone de Next.js, de excluir dependencias de desarrollo y de eliminar herramientas de compilación.
-- **Capas**: efecto de agrupar comandos relacionados en un solo `RUN`.
+- **Capas**: cuántas capas genera cada Dockerfile. Agrupar comandos en un solo `RUN` reduce capas, aunque separar los archivos de configuración puede agregar algunas pequeñas (ver análisis).
 - **Rebuild tras cambio de código**: efecto del orden de las capas. En las imágenes básicas, `COPY . .` va antes de instalar dependencias, por lo que cualquier cambio en el código obliga a reinstalar todo. En las multi-stage, la capa de dependencias se reutiliza desde la caché.
 
 | Imagen | Tag | Tamaño | Capas | Build en frío | Rebuild tras cambio de código |
