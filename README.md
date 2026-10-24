@@ -162,6 +162,7 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 - **`NEXT_PUBLIC_API_URL` como `ARG`**: las variables `NEXT_PUBLIC_*` se incrustan en el JavaScript durante `next build`, por lo que deben existir en la etapa de build.
 - **Build independiente de la API**: con Cache Components (activo por defecto en Next.js 16.4), los datos sin caché se cargan dentro de `<Suspense>`. Next.js prerenderiza el "shell" estático y transmite los datos en cada petición, por lo que `next build` no necesita que la API esté levantada.
 - **Fuentes del sistema en lugar de Google Fonts**: el build no depende de descargar fuentes de internet, lo que lo hace más rápido y reproducible.
+- **Sin npm, npx, corepack ni yarn en la imagen final**: el servidor standalone solo necesita `node`. Estas herramientas venían en la imagen base y traían vulnerabilidades altas en sus dependencias internas, así que se eliminan en la etapa runner.
 - **Usuario sin privilegios (`nextjs`, UID 1001)**: el proceso no corre como root. `public/` queda como solo lectura y solo `.next` es escribible (caché de ISR).
 - **Caché de npm con BuildKit (`--mount=type=cache`)**: acelera reinstalaciones sin guardar la caché dentro de la imagen.
 - **`.dockerignore`**: excluye `node_modules`, `.next`, `.git` y `.env`, lo que reduce el contexto de build y evita filtrar secretos.
@@ -173,6 +174,7 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 - **Etapa `vendor` con la misma versión de PHP que producción**: se usa `php:8.3-cli-alpine` con el binario de Composer copiado desde `composer:2`. Así Composer valida dependencias contra el mismo PHP que corre en producción. Composer, git y unzip existen solo en esta etapa; a la imagen final se copia **únicamente la carpeta `vendor/`**.
 - **`composer install` antes de copiar el código**: la capa de dependencias queda en caché mientras `composer.lock` no cambie. Se usa `--no-dev` (sin PHPUnit, Faker ni herramientas de desarrollo) y autoload optimizado.
 - **Extensiones**: la imagen oficial ya incluye `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype` y `json`. Solo se compilan `pdo_mysql` y `opcache`. Las herramientas de compilación se instalan y eliminan en la misma capa para que no aumenten el tamaño. Un paso del build verifica que las siete extensiones requeridas estén presentes y falla si alguna falta.
+- **`apk upgrade` en la etapa runtime**: aplica los parches de seguridad de Alpine disponibles al momento del build. Eliminó una vulnerabilidad crítica (`brotli`) heredada de la imagen base.
 - **Nginx + PHP-FPM en el mismo contenedor**: Nginx atiende el puerto 8000 y pasa las peticiones PHP a PHP-FPM por `127.0.0.1:9000`, que nunca se expone. Así el ecosistema se mantiene en tres servicios. La alternativa (Nginx en un contenedor separado) escala mejor de forma independiente, pero requiere compartir `public/` entre contenedores.
 - **OPcache con `validate_timestamps=0`**: el código no cambia dentro de un contenedor, así que PHP no revisa archivos en cada petición.
 - **Seguridad**: `php.ini-production`, `expose_php=Off`, `server_tokens off`, bloqueo de archivos ocultos en Nginx, CORS restringido al origen del frontend, rate limit en el envío de mensajes, workers de PHP-FPM como `www-data` y solo `storage/` y `bootstrap/cache/` con permisos de escritura. El `.env` nunca entra a la imagen: la configuración llega por variables de entorno.
@@ -222,20 +224,45 @@ El script imprime la tabla y la guarda en `image-comparison.md`. Ambas versiones
 
 | Imagen | Tag | Tamaño | Capas | Build en frío | Rebuild tras cambio de código |
 |---|---|---|---|---|---|
-| Frontend basico | `chat-web:basic` | 2907 MB | 12 | 88s | 58s |
-| Frontend multi-stage | `chat-web:1.0` | 326 MB | 9 | 41s | 13s |
-| Backend basico | `chat-api:basic` | 938 MB | 19 | 43s | 11s |
-| Backend multi-stage | `chat-api:1.0` | 184 MB | 23 | 55s | 6s |
+| Frontend basico | `chat-web:basic` | 2907 MB | 12 | 80s | 65s |
+| Frontend multi-stage | `chat-web:1.0` | 326 MB | 9 | 48s | 15s |
+| Backend basico | `chat-api:basic` | 938 MB | 19 | 32s | 13s |
+| Backend multi-stage | `chat-api:1.0` | 185 MB | 23 | 55s | 8s |
 
 _Medido el 2026-10-24 con Docker version 29.9.2, build a82e528._
 
 **Análisis de resultados:**
 
 - **Frontend: 2907 MB -> 326 MB (89% menos).** Se debe a usar Alpine y a copiar solo el build standalone de Next.js, en lugar de los `node_modules` completos y el código fuente.
-- **Backend: 938 MB -> 184 MB (80% menos).** Se debe a usar Alpine y a dejar fuera de la imagen final las dependencias de desarrollo, Composer y las herramientas de compilación.
-- **Rebuild tras un cambio de código: frontend 58s -> 13s (78% más rápido) y backend 11s -> 6s (45% más rápido).** En las imágenes básicas, `COPY . .` va antes de instalar dependencias, así que cualquier cambio obliga a reinstalar todo. En las multi-stage, la capa de dependencias se reutiliza desde la caché.
-- **El build en frío del backend multi-stage es más lento (55s vs 43s).** Es un costo esperado: compila `pdo_mysql` y `opcache` desde código fuente y ejecuta dos etapas. Se paga una sola vez; en el trabajo diario lo que cuenta es el rebuild.
+- **Backend: 938 MB -> 185 MB (80% menos).** Se debe a usar Alpine y a dejar fuera de la imagen final las dependencias de desarrollo, Composer y las herramientas de compilación.
+- **Rebuild tras un cambio de código: frontend 65s -> 15s (77% más rápido) y backend 13s -> 8s (38% más rápido).** En las imágenes básicas, `COPY . .` va antes de instalar dependencias, así que cualquier cambio obliga a reinstalar todo. En las multi-stage, la capa de dependencias se reutiliza desde la caché.
+- **El build en frío del backend multi-stage es más lento (55s vs 32s).** Es un costo esperado: aplica los parches de seguridad de Alpine, compila `pdo_mysql` y `opcache` desde código fuente y ejecuta dos etapas. Se paga una sola vez; en el trabajo diario lo que cuenta es el rebuild.
 - **El backend multi-stage tiene más capas (23 vs 19).** Cada archivo de configuración (php.ini, Nginx, entrypoint) se copia en su propia capa pequeña, después de la instalación de extensiones, para que un cambio de configuración no obligue a recompilarlas. Más capas no implica más peso: la imagen final pesa 80% menos.
+
+### Análisis de seguridad (Docker Scout)
+
+Escaneo de las cuatro imágenes con `docker scout quickview`:
+
+| Imagen | Paquetes | Críticas | Altas | Medias | Bajas | Usuario por defecto |
+|---|---|---|---|---|---|---|
+| chat-web:basic | 1204 | 3 | 56 | 85 | 245 | root |
+| chat-web:1.0 | 96 | 0 | 0 | 0 | 0 | nextjs (sin privilegios) |
+| chat-api:basic | 397 | 0 | 3 | 6 | 150 | root |
+| chat-api:1.0 | 142 | 0 | 2 | 8 | 5 | root (workers como www-data y nginx) |
+
+- **Frontend: de 389 vulnerabilidades a 0** y de 1204 a 96 paquetes. Un primer escaneo encontró 4 vulnerabilidades altas en dependencias internas de npm (`brace-expansion` y `undici`). Como el servidor standalone solo necesita `node`, se eliminaron npm, npx, corepack y yarn en lugar de actualizarlos.
+- **Eliminar npm no redujo el tamaño de la imagen (326 MB)**: esos archivos pertenecen a las capas de la imagen base. Borrarlos en una capa posterior los quita del sistema de archivos final, que es lo que importa para la seguridad, pero no de las capas anteriores.
+- **Backend: de 159 vulnerabilidades a 15 (91% menos)** y de 397 a 142 paquetes. Un primer escaneo encontró 1 crítica (`brotli`) y 1 alta (`curl`) heredadas de `php:8.3-fpm-alpine`. Con `apk upgrade` se eliminó la crítica. Queda 1 alta con parche reportado por Scout que `apk upgrade` no resolvió al momento del build; se corrige reconstruyendo con `docker compose build --pull --no-cache api` cuando la versión corregida llegue a los repositorios de Alpine o a la imagen base.
+- **Las capas propias de los Dockerfiles no agregan vulnerabilidades**: todas las restantes vienen de las imágenes oficiales de Node.js y PHP.
+
+## Limitaciones conocidas
+
+- **Sin autenticación**: la API no tiene login; el usuario actual se define con `CHAT_SELF_USER_ID`. En un entorno real se agregaría autenticación (por ejemplo, Laravel Sanctum).
+- **Actualización por polling**: el frontend consulta mensajes nuevos cada 4 segundos. Una versión en tiempo real usaría WebSockets (por ejemplo, Laravel Reverb).
+- **Procesos maestros como root en la API**: los workers de PHP-FPM y Nginx corren como `www-data` y `nginx`, pero sus procesos maestros corren como root dentro del contenedor, y Docker Scout lo señala. La alternativa es mover Nginx a su propio contenedor y ejecutar PHP-FPM con un usuario sin privilegios.
+- **Nginx y PHP-FPM sin supervisor de procesos**: si PHP-FPM se detiene, Nginx mantiene vivo el contenedor. El healthcheck lo detecta y lo marca como `unhealthy`, pero Docker Compose no lo reinicia automáticamente por ese estado.
+- **Parches de seguridad atados al momento del build**: `apk upgrade` aplica los parches disponibles cuando se construye la imagen; para incorporar parches nuevos hay que reconstruir con `--pull --no-cache`.
+- **Interfaz pensada para escritorio**: la barra lateral tiene ancho fijo y no está optimizada para celular.
 
 ## Evidencias
 

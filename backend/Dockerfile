@@ -35,9 +35,9 @@ RUN composer dump-autoload --no-dev --optimize --no-scripts
 # -----------------------------------------------------------
 FROM php:8.3-fpm-alpine AS runtime
 
-# Nginx como proxy inverso + pdo_mysql y opcache.
+# Parches de seguridad de Alpine + Nginx como proxy inverso + pdo_mysql y opcache.
 # Las herramientas de compilacion se instalan y se borran en la misma capa.
-RUN apk add --no-cache nginx \
+RUN apk upgrade --no-cache && apk add --no-cache nginx \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
  && docker-php-ext-install -j"$(nproc)" pdo_mysql opcache \
  && apk del .build-deps \

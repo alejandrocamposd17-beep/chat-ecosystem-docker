@@ -55,8 +55,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-# Usuario sin privilegios, creado en una sola capa
-RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
+# Usuario sin privilegios y se eliminan npm, npx, corepack y yarn (el servidor standalone solo necesita node)
+RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 
 # Archivos estaticos: propiedad de root, solo lectura para la app
 COPY --from=builder /app/public ./public
