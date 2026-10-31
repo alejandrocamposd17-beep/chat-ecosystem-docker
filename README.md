@@ -19,7 +19,6 @@ Cada imagen se construye con **builds multi-stage** para separar la fase de cons
 | Alejandro Campos |
 | Miguel Ramos |
 | Stephanie Torres |
-| Erick Ramos |
 | Gerson Sanchez |
 
 ---
