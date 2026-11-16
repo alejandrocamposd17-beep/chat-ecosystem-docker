@@ -3,9 +3,27 @@ set -e
 
 cd /var/www/html
 
-# La cache de configuracion/rutas/vistas se genera en runtime porque
+# Sin APP_KEY (por ejemplo en la demo) se genera una temporal: las sesiones se invalidan al reiniciar
+if [ -z "$APP_KEY" ]; then
+  echo "APP_KEY no definida: se genera una temporal."
+  APP_KEY="base64:$(head -c 32 /dev/urandom | base64)"
+  export APP_KEY
+fi
+
+# Con SQLite (demo) se crea el archivo y se da permiso de escritura a PHP-FPM
+if [ "$DB_CONNECTION" = "sqlite" ]; then
+  DB_FILE="${DB_DATABASE:-/var/www/html/database/database.sqlite}"
+  mkdir -p "$(dirname "$DB_FILE")"
+  [ -f "$DB_FILE" ] || touch "$DB_FILE"
+  chown www-data:www-data "$DB_FILE" "$(dirname "$DB_FILE")"
+fi
+
+# La cache de configuracion, rutas y eventos se genera en runtime porque
 # las variables de entorno llegan desde docker-compose, no del build.
-php artisan optimize
+# (La API no tiene vistas Blade, por eso no se usa "optimize", que tambien compila vistas.)
+php artisan config:cache
+php artisan route:cache
+php artisan event:cache
 
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   php artisan migrate --force

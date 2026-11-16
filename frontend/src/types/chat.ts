@@ -5,6 +5,7 @@ export interface User {
   name: string;
   avatarUrl: string;
   status: "online" | "offline" | "away";
+  lastSeenAt?: string | null;
 }
 
 export interface Message {
@@ -18,7 +19,16 @@ export interface Message {
 
 export interface Conversation {
   id: string;
-  user: User;
+  user: User | null;
   lastMessage: string;
+  lastMessageIsSelf: boolean;
   updatedAt: string;
+  unreadCount: number;
+  otherLastReadAt: string | null;
 }
+
+// Eventos en tiempo real que llegan por /api/stream (Server-Sent Events)
+export type RealtimeEvent =
+  | { type: "message"; data: Message }
+  | { type: "typing"; data: { chatId: string; userId: string; typing: boolean } }
+  | { type: "read"; data: { chatId: string; userId: string; readAt: string } };

@@ -24,8 +24,8 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # -----------------------------------------------------------
 # Etapa 2: Builder
-# Las variables NEXT_PUBLIC_* se incrustan en el bundle durante
-# el build, por eso entran como ARG y no en runtime.
+# No hay variables NEXT_PUBLIC_*: el navegador solo habla con Next.js
+# y la URL de la API (API_INTERNAL_URL) se lee en runtime.
 # -----------------------------------------------------------
 FROM node:24-alpine AS builder
 WORKDIR /app
@@ -33,9 +33,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-    NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN \
     if [ -f yarn.lock ]; then corepack enable && yarn build; \
