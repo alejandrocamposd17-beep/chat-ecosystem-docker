@@ -5,6 +5,7 @@ export interface User {
   name: string;
   avatarUrl: string;
   avatarVersion?: number | null;
+  isGuest?: boolean;
   status: "online" | "offline" | "away";
   lastSeenAt?: string | null;
 }
