@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (PHPUnit + Pint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Instalar dependencias
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Preparar entorno
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Pruebas (PHPUnit)
+        run: php artisan test
+
+      - name: Estilo de código (Laravel Pint)
+        run: |
+          vendor/bin/pint
+          git diff --exit-code
+
+  web:
+    name: Frontend (ESLint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Build (incluye verificación de tipos)
+        run: npm run build
+
+  ecosystem:
+    name: Ecosistema Docker (compose up + prueba de humo)
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Crear .env de prueba
+        run: |
+          cp .env.example .env
+          sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|" .env
+          sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)|" .env
+          sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=$(openssl rand -hex 16)|" .env
+
+      - name: Construir y levantar los servicios
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Estado de los servicios
+        run: docker compose ps
+
+      - name: Prueba de humo (navegador -> Next.js -> Laravel -> MySQL)
+        run: |
+          set -e
+          curl -fsS http://localhost:8000/up > /dev/null
+
+          # Sin sesión, la app redirige al login
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/)" = "307"
+
+          # Login a través de Next.js: la respuesta no incluye el token (queda en una cookie httpOnly)
+          curl -fsS -c cookies.txt -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+            -d '{"email":"alejandro@chat.test","password":"password"}' http://localhost:3000/api/session | tee login.json
+          if grep -q '"token"' login.json; then echo "El token no debe llegar al navegador"; exit 1; fi
+          grep -q '#HttpOnly_' cookies.txt
+
+          # Lista de chats y envío de un mensaje
+          curl -fsS -b cookies.txt 'http://localhost:3000/api/proxy?path=conversations' | tee chats.json | grep -q 'Andrea'
+          CHAT_ID=$(grep -o '"id":"[0-9]*"' chats.json | head -1 | grep -o '[0-9]*')
+          curl -fsS -b cookies.txt -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+            -d '{"content":"Hola desde CI"}' "http://localhost:3000/api/proxy?path=conversations/$CHAT_ID/messages" | grep -q 'Hola desde CI'
+
+          # El stream de tiempo real responde como text/event-stream
+          curl -s -b cookies.txt -N --max-time 3 -D headers.txt http://localhost:3000/api/stream -o stream.txt || true
+          grep -qi 'content-type: text/event-stream' headers.txt
+          grep -q 'retry:' stream.txt
+
+          # La página del chat se renderiza con sesión
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b cookies.txt http://localhost:3000/chat/$CHAT_ID)" = "200"
+
+      - name: Logs si algo falla
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Apagar
+        if: always()
+        run: docker compose down -v
