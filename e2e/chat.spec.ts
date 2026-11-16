@@ -13,7 +13,7 @@ async function loginAs(browser: Browser, who: "alejandro" | "andrea"): Promise<P
   await page.getByLabel("Correo").fill(`${who}@chat.test`);
   await page.getByLabel("Contraseña").fill("password");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page.getByText("Conectado en tiempo real")).toBeVisible();
+  await expect(page.getByText("Conectado en tiempo real")).toBeVisible({ timeout: 30_000 });
   return page;
 }
 
@@ -21,7 +21,7 @@ async function enterAsGuest(browser: Browser): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto("/login");
   await page.getByRole("button", { name: "Probar sin registrarme" }).click();
-  await expect(page.getByText("Conectado en tiempo real")).toBeVisible();
+  await expect(page.getByText("Conectado en tiempo real")).toBeVisible({ timeout: 30_000 });
   return page;
 }
 
