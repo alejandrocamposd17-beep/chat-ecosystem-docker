@@ -44,14 +44,15 @@ RUN apk upgrade --no-cache && apk add --no-cache nginx \
  && rm -rf /tmp/* /var/cache/apk/*
 
 # Verificacion: el build falla si falta alguna extension requerida.
-# mbstring, openssl, tokenizer, xml, ctype y json ya vienen en la imagen oficial.
-RUN for ext in pdo_mysql mbstring openssl tokenizer xml ctype json; do \
+# pdo_sqlite (demo), mbstring, openssl, tokenizer, xml, ctype y json ya vienen en la imagen oficial.
+RUN for ext in pdo_mysql pdo_sqlite mbstring openssl tokenizer xml ctype json; do \
       php -m | grep -qi "^${ext}$" || { echo "Falta la extension: ${ext}"; exit 1; }; \
     done
 
 # Configuracion de produccion de PHP, OPcache y Nginx
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY docker/php/zz-production.ini $PHP_INI_DIR/conf.d/zz-production.ini
+COPY docker/php/zz-fpm-pool.conf /usr/local/etc/php-fpm.d/zz-fpm-pool.conf
 COPY docker/nginx/default.conf /etc/nginx/http.d/default.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
