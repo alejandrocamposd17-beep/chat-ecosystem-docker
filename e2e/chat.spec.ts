@@ -10,6 +10,8 @@ const PIXEL_PNG = Buffer.from(
 async function loginAs(browser: Browser, who: "alejandro" | "andrea"): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto("/login");
+  // Mientras se resuelve la página, Next.js puede tener el formulario de respaldo y el definitivo a la vez
+  await expect(page.locator('input[type="email"]')).toHaveCount(1);
   await page.getByLabel("Correo").fill(`${who}@chat.test`);
   await page.getByLabel("Contraseña").fill("password");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
@@ -20,6 +22,7 @@ async function loginAs(browser: Browser, who: "alejandro" | "andrea"): Promise<P
 async function enterAsGuest(browser: Browser): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto("/login");
+  await expect(page.locator('input[type="email"]')).toHaveCount(1);
   await page.getByRole("button", { name: "Probar sin registrarme" }).click();
   await expect(page.getByText("Conectado en tiempo real")).toBeVisible({ timeout: 30_000 });
   return page;
