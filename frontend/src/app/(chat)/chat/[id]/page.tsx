@@ -1,13 +1,13 @@
 import { Suspense } from "react";
 import { unstable_rethrow } from "next/navigation";
-import { getConversation, getMessages } from "@/lib/server-api";
+import { getConversation, getMe, getMessages } from "@/lib/server-api";
 import ChatWindow from "@/components/ChatWindow";
 import ApiError from "@/components/ApiError";
 
 async function ChatLoader({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const result = await Promise.all([getConversation(id), getMessages(id)]).then(
-    ([conversation, messages]) => ({ ok: true as const, conversation, messages }),
+  const result = await Promise.all([getConversation(id), getMessages(id), getMe()]).then(
+    ([conversation, messages, me]) => ({ ok: true as const, conversation, messages, me }),
     (error: unknown) => {
       // Las redirecciones (sesión vencida) no son errores: se dejan pasar
       unstable_rethrow(error);
@@ -18,7 +18,7 @@ async function ChatLoader({ params }: { params: Promise<{ id: string }> }) {
   if (!result.ok) return <ApiError error={result.error} />;
 
   // key: reinicia el estado del cliente al cambiar de conversación
-  return <ChatWindow key={id} conversation={result.conversation} initialMessages={result.messages} />;
+  return <ChatWindow key={id} conversation={result.conversation} initialMessages={result.messages} meId={result.me.id} />;
 }
 
 function ChatSkeleton() {
