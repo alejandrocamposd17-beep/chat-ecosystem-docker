@@ -11,7 +11,7 @@ class StatusController extends Controller
         return response()->json([
             'service' => config('app.name'),
             'status' => 'ok',
-            'docs' => url('/api/conversations'),
+            'health' => url('/up'),
         ]);
     }
 }
