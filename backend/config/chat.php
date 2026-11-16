@@ -15,4 +15,18 @@ return [
 
     // Segundos que dura el aviso de "escribiendo..."
     'typing_ttl_seconds' => (int) env('CHAT_TYPING_TTL_SECONDS', 5),
+
+    // Cada cuántos segundos el stream revisa quién está en línea
+    'presence_interval_seconds' => (int) env('CHAT_PRESENCE_INTERVAL_SECONDS', 10),
+
+    // Máximo de integrantes por grupo
+    'max_group_members' => (int) env('CHAT_MAX_GROUP_MEMBERS', 50),
+
+    // Adjuntos: tamaño máximo (KB) y tipos permitidos (se valida el contenido real del archivo).
+    // Sin SVG ni HTML: podrían ejecutar scripts en el navegador.
+    'max_attachment_kb' => (int) env('CHAT_MAX_ATTACHMENT_KB', 5120),
+    'attachment_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx', 'zip'],
+
+    // Reacciones permitidas
+    'reactions' => ['👍', '❤️', '😂', '😮', '😢', '🙏'],
 ];
