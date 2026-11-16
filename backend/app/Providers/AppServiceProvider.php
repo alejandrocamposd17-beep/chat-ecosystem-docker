@@ -62,5 +62,10 @@ class AppServiceProvider extends ServiceProvider
             ->by((string) ($request->user()?->id ?: $request->ip())));
         RateLimiter::for('typing', fn (Request $request) => Limit::perMinute(40)
             ->by((string) ($request->user()?->id ?: $request->ip())));
+
+        // Subidas de archivos: 10 por minuto por usuario (los mensajes de texto no cuentan)
+        RateLimiter::for('uploads', fn (Request $request) => $request->hasFile('attachment') || $request->hasFile('avatar')
+            ? Limit::perMinute(10)->by('uploads|'.($request->user()?->id ?: $request->ip()))
+            : Limit::none());
     }
 }
