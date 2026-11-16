@@ -35,16 +35,17 @@ class ApiToken extends Model
      * Crea un token para el usuario y devuelve el valor en texto plano.
      * Es la única vez que el valor existe sin hash: no se puede recuperar después.
      */
-    public static function issue(User $user, string $name = 'web'): string
+    public static function issue(User $user, string $name = 'web', ?int $hours = null): string
     {
         $plain = Str::random(64);
         $days = (int) config('chat.token_ttl_days');
+        $expiresAt = $hours !== null ? now()->addHours($hours) : ($days > 0 ? now()->addDays($days) : null);
 
         static::create([
             'user_id' => $user->id,
             'name' => $name,
             'token_hash' => static::hash($plain),
-            'expires_at' => $days > 0 ? now()->addDays($days) : null,
+            'expires_at' => $expiresAt,
         ]);
 
         return $plain;

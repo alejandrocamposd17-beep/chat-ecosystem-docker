@@ -4,6 +4,9 @@ return [
     // Días de vigencia de un token de sesión (0 = no expira)
     'token_ttl_days' => (int) env('CHAT_TOKEN_TTL_DAYS', 30),
 
+    // Horas que dura la sesión de una cuenta de invitado (después hay que registrarse)
+    'guest_session_hours' => (int) env('CHAT_GUEST_SESSION_HOURS', 24),
+
     // Segundos desde la última actividad para mostrar a un usuario "en línea"
     'online_window_seconds' => (int) env('CHAT_ONLINE_WINDOW_SECONDS', 90),
 

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Route;
 
 // Autenticación (pública)
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
+Route::post('/auth/guest', [AuthController::class, 'guest'])->middleware('throttle:register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
 // Todo lo demás requiere un token Bearer válido

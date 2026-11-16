@@ -21,6 +21,7 @@ class UserResource extends JsonResource
             'avatarUrl' => $this->avatar_url ?? '',
             // Con foto subida, el frontend la pide a /api/avatar?id=...&v=... (la versión evita la caché vieja)
             'avatarVersion' => $this->avatar_path ? $this->updated_at?->getTimestamp() : null,
+            'isGuest' => (bool) $this->is_guest,
             'status' => $this->presence(),
             'lastSeenAt' => $this->last_seen_at?->toIso8601String(),
         ];

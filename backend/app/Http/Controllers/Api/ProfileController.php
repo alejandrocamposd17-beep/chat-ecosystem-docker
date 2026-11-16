@@ -61,6 +61,8 @@ class ProfileController extends Controller
     /** PUT /api/me/password: exige la contraseña actual y cierra las demás sesiones */
     public function password(Request $request): JsonResponse
     {
+        abort_if($request->user()->is_guest, 403, 'Las cuentas de invitado no tienen contraseña. Crea una cuenta para conservar tus chats.');
+
         $data = $request->validate([
             'current_password' => ['required', 'string'],
             'password' => ['required', 'string', 'confirmed', Password::min(8)->letters()->numbers()],
