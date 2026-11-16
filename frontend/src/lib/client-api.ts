@@ -1,11 +1,12 @@
 import type { Conversation, Message, User } from "@/types/chat";
 
 /**
- * Cliente del navegador: llama a /api/proxy (Route Handler de Next.js), que agrega el token
+ * Cliente del navegador: llama a /api/proxy?path=... (Route Handler de Next.js), que agrega el token
  * desde la cookie httpOnly y reenvía la petición a Laravel.
  */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api/proxy/${path}`, {
+async function request<T>(path: string, init?: RequestInit, query: Record<string, string> = {}): Promise<T> {
+  const params = new URLSearchParams({ path, ...query });
+  const res = await fetch(`/api/proxy?${params}`, {
     ...init,
     headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
     cache: "no-store",
@@ -28,8 +29,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const fetchConversations = () => request<Conversation[]>("conversations");
 export const fetchMessages = (chatId: string, before?: string) =>
-  request<Message[]>(`conversations/${chatId}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`);
-export const searchUsers = (search: string) => request<User[]>(`users?search=${encodeURIComponent(search)}`);
+  request<Message[]>(`conversations/${chatId}/messages`, undefined, before ? { before } : {});
+export const searchUsers = (search: string) => request<User[]>("users", undefined, { search });
 
 export const startConversation = (userId: string) =>
   request<Conversation>("conversations", { method: "POST", body: JSON.stringify({ userId: Number(userId) }) });
