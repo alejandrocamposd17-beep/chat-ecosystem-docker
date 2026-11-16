@@ -1,0 +1,5 @@
+{
+  "name": "chat-e2e",
+  "private": true,
+  "description": "Pruebas de punta a punta del chat con Playwright (se instala en el CI con npm install --no-save @playwright/test)"
+}
