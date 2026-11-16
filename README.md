@@ -32,6 +32,10 @@ Cada imagen se construye con **builds multi-stage** para separar la fase de cons
 - **Interfaz adaptable**: en celular se ve la lista o el chat, con botón para volver y un menú ⋯ para las acciones de cada mensaje.
 - **Pruebas y CI**: PHPUnit para la API, pruebas de punta a punta con Playwright (dos navegadores conversando a la vez) y GitHub Actions que valida backend, frontend y el ecosistema Docker completo.
 
+### Probar sin registrarse
+
+En la pantalla de inicio, **"Probar sin registrarme"** crea una cuenta de invitado temporal (*Invitado 1234*) con una sesión de 24 horas. Cada persona que entra así es un usuario distinto, así que dos invitados pueden buscarse con "Nuevo" y escribirse. El invitado puede cambiar su nombre y foto en el perfil, pero no tiene contraseña: para conservar sus chats debe registrarse. La API limita la creación de invitados a 10 por minuto por IP.
+
 ### Cuentas de demostración
 
 El seeder crea cinco usuarios con la contraseña `password`: `alejandro@chat.test`, `andrea@chat.test`, `carlos@chat.test`, `sofia@chat.test` y `diego@chat.test`, además del grupo *Equipo Docker*. Para ver el tiempo real, abre dos navegadores (o una ventana privada) y entra con una cuenta distinta en cada uno.
@@ -119,6 +123,7 @@ Todas las rutas, excepto registro e inicio de sesión, requieren `Authorization:
 | Método | Ruta | Respuesta |
 |---|---|---|
 | POST | `/api/auth/register` | `{ user, token }` (201). Límite: 10 por minuto por IP |
+| POST | `/api/auth/guest` | `{ user, token }` (201): cuenta de invitado temporal (sesión de 24 horas). Límite: 10 por minuto por IP |
 | POST | `/api/auth/login` | `{ user, token }`. Límite: 10 intentos por minuto por cuenta e IP |
 | POST | `/api/auth/logout` | Revoca solo el token usado |
 | GET / PATCH | `/api/me` | `User` autenticado / cambia el nombre |
@@ -201,6 +206,7 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 | `RUN_MIGRATIONS` | api | Ejecuta `migrate --force` al iniciar |
 | `SEED_DATABASE` | api | Carga datos de ejemplo si la base está vacía |
 | `CHAT_TOKEN_TTL_DAYS` | api | Días de vigencia de los tokens de sesión (30 por defecto) |
+| `CHAT_GUEST_SESSION_HOURS` | api | Horas que dura la sesión de un invitado (24 por defecto) |
 | `API_INTERNAL_URL` | web | URL de la API desde Next.js (en Compose: `http://api:8000/api`) |
 | `API_PORT` / `WEB_PORT` | host | Puertos publicados en el host |
 
@@ -320,7 +326,7 @@ cd backend && composer install && php artisan test   # requiere PHP 8.3 y Compos
 ```
 
 - **Pruebas de la API (PHPUnit, SQLite en memoria)**: registro, login, tokens con hash y vencidos, logout, límites de velocidad, chats entre usuarios, acceso a conversaciones ajenas (404), no leídos y lecturas, paginación, búsqueda de usuarios y de mensajes, grupos y permisos de administrador, adjuntos (tipos permitidos, archivos disfrazados, descarga solo para integrantes), edición y borrado solo por el autor, reacciones, respuestas, perfil y contraseña, stream SSE (mensajes, ediciones, reacciones, "escribiendo..." y aislamiento entre usuarios) y las cuentas del seeder.
-- **Pruebas de punta a punta (Playwright, `e2e/`)**: dos navegadores con sesiones distintas (Alejandro y Andrea) contra el ecosistema levantado con Docker: "escribiendo...", mensaje en tiempo real, "Visto", reacción, envío de una imagen y mensajes de grupo.
+- **Pruebas de punta a punta (Playwright, `e2e/`)**: dos navegadores con sesiones distintas (Alejandro y Andrea) contra el ecosistema levantado con Docker: "escribiendo...", mensaje en tiempo real, "Visto", reacción, envío de una imagen, mensajes de grupo y dos invitados que entran sin registrarse y se escriben.
 - **GitHub Actions** en cada push y PR:
   - **API**: pruebas con PHPUnit y estilo con Laravel Pint.
   - **Frontend**: ESLint, verificación de tipos con TypeScript y `next build`.
