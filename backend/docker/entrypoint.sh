@@ -18,9 +18,12 @@ if [ "$DB_CONNECTION" = "sqlite" ]; then
   chown www-data:www-data "$DB_FILE" "$(dirname "$DB_FILE")"
 fi
 
-# La cache de configuracion/rutas/vistas se genera en runtime porque
+# La cache de configuracion, rutas y eventos se genera en runtime porque
 # las variables de entorno llegan desde docker-compose, no del build.
-php artisan optimize
+# (La API no tiene vistas Blade, por eso no se usa "optimize", que tambien compila vistas.)
+php artisan config:cache
+php artisan route:cache
+php artisan event:cache
 
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   php artisan migrate --force
