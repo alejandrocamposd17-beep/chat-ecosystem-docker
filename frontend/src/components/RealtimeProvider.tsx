@@ -41,7 +41,7 @@ export default function RealtimeProvider({ children }: { children: React.ReactNo
         // CLOSED: el servidor respondió con error (no 200); se reintenta manualmente
         if (source?.readyState === EventSource.CLOSED && !closed) {
           retryTimer = setTimeout(async () => {
-            const me = await fetch("/api/proxy/me", { cache: "no-store" }).catch(() => null);
+            const me = await fetch("/api/proxy?path=me", { cache: "no-store" }).catch(() => null);
             if (me?.status === 401) {
               window.location.assign("/api/session/expired");
               return;
