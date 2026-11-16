@@ -3,13 +3,30 @@ import { API_URL, SESSION_COOKIE } from "@/lib/config";
 import { clearSessionCookie, forbidden, isSameOrigin } from "@/lib/route-guards";
 
 // Solo se reenvían estas rutas de la API (evita usar el proxy para llegar a otros endpoints)
-const ALLOWED = /^(me|users|conversations(\/\d+(\/(messages|read|typing))?)?)$/;
+const ALLOWED = new RegExp(
+  "^(" +
+    [
+      "me",
+      "me/avatar",
+      "me/password",
+      "users",
+      "conversations",
+      "conversations/\\d+",
+      "conversations/\\d+/(read|typing|participants|messages)",
+      "conversations/\\d+/participants/\\d+",
+      "conversations/\\d+/messages/\\d+",
+      "conversations/\\d+/messages/\\d+/reactions",
+    ].join("|") +
+    ")$",
+);
+
+type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 /**
  * /api/proxy?path=conversations/1/messages&before=10
- * Reenvía la petición a Laravel agregando el token de la cookie httpOnly.
+ * Reenvía la petición JSON a Laravel agregando el token de la cookie httpOnly.
  */
-async function forward(request: NextRequest, method: "GET" | "POST") {
+async function forward(request: NextRequest, method: Method) {
   if (method !== "GET" && !isSameOrigin(request)) return forbidden();
 
   const params = new URLSearchParams(request.nextUrl.searchParams);
@@ -30,7 +47,7 @@ async function forward(request: NextRequest, method: "GET" | "POST") {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: method === "POST" ? await request.text() : undefined,
+    body: method === "GET" ? undefined : await request.text(),
     cache: "no-store",
   });
 
@@ -48,4 +65,16 @@ export function GET(request: NextRequest) {
 
 export function POST(request: NextRequest) {
   return forward(request, "POST");
+}
+
+export function PATCH(request: NextRequest) {
+  return forward(request, "PATCH");
+}
+
+export function PUT(request: NextRequest) {
+  return forward(request, "PUT");
+}
+
+export function DELETE(request: NextRequest) {
+  return forward(request, "DELETE");
 }

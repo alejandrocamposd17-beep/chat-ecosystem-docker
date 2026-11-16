@@ -21,7 +21,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, pdo_sqlite, sqlite3
+          extensions: mbstring, pdo_sqlite, sqlite3, gd, fileinfo
           coverage: none
 
       - name: Instalar dependencias
@@ -108,6 +108,25 @@ jobs:
 
           # La página del chat se renderiza con sesión
           test "$(curl -s -o /dev/null -w '%{http_code}' -b cookies.txt http://localhost:3000/chat/$CHAT_ID)" = "200"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Pruebas de punta a punta (Playwright, dos navegadores a la vez)
+        working-directory: e2e
+        run: |
+          npm install --no-save --no-audit --no-fund @playwright/test@1
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Evidencia de Playwright si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: e2e/test-results
+          if-no-files-found: ignore
 
       - name: Logs si algo falla
         if: failure()

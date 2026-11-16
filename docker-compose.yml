@@ -49,6 +49,9 @@ services:
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
       SEED_DATABASE: ${SEED_DATABASE:-true}
       CHAT_TOKEN_TTL_DAYS: ${CHAT_TOKEN_TTL_DAYS:-30}
+    volumes:
+      # Adjuntos y fotos de perfil (disco privado de Laravel): sobreviven a la recreación del contenedor
+      - api_files:/var/www/html/storage/app/private
     depends_on:
       db:
         condition: service_healthy
@@ -80,6 +83,7 @@ services:
 
 volumes:
   db_data:
+  api_files:
 
 networks:
   # La base de datos solo vive en "backend": el frontend no puede alcanzarla

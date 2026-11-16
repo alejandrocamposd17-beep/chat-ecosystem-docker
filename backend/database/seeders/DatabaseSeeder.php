@@ -43,8 +43,9 @@ class DatabaseSeeder extends Seeder
             ], false],
         ];
 
+        $contacts = [];
         foreach ($chats as $i => [$name, $messages, $readByMe]) {
-            $contact = $this->user($name);
+            $contact = $contacts[$name] = $this->user($name);
 
             $conversation = Conversation::create([
                 'owner_id' => $me->id,
@@ -72,6 +73,14 @@ class DatabaseSeeder extends Seeder
             $conversation->timestamps = false;
             $conversation->forceFill(['created_at' => $time, 'updated_at' => $time])->save();
         }
+
+        // Grupo de ejemplo con tres integrantes (Alejandro es el administrador)
+        $group = Conversation::createGroup($me, 'Equipo Docker', [$contacts['Andrea Martínez'], $contacts['Carlos Rivera']]);
+        $group->messages()->create([
+            'sender_id' => $contacts['Carlos Rivera']->id,
+            'content' => '¿Quién revisa el pipeline de CI hoy?',
+        ]);
+        $group->participants()->updateExistingPivot($me->id, ['last_read_at' => now()]);
     }
 
     private function user(string $name): User

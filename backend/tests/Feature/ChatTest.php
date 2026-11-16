@@ -99,7 +99,8 @@ class ChatTest extends TestCase
         $this->actingAs($ana, 'api')->getJson('/api/conversations')->assertJsonPath('0.unreadCount', 0);
         // Beto ve hasta cuándo leyó Ana (para mostrar "Visto")
         $this->actingAs($beto, 'api')->getJson("/api/conversations/{$chat->id}")
-            ->assertJsonPath('otherLastReadAt', fn ($value) => $value !== null);
+            ->assertJsonPath('readStates.0.userId', (string) $ana->id)
+            ->assertJsonPath('readStates.0.lastReadAt', fn ($value) => $value !== null);
     }
 
     public function test_messages_are_paginated_with_before(): void
@@ -150,10 +151,13 @@ class ChatTest extends TestCase
         $this->postJson('/api/auth/login', ['email' => 'alejandro@chat.test', 'password' => 'password'])->assertOk();
         $token = $this->postJson('/api/auth/login', ['email' => 'andrea@chat.test', 'password' => 'password'])->json('token');
 
-        // Andrea ve el chat que el seeder creó con Alejandro
-        $this->getJson('/api/conversations', ['Authorization' => "Bearer {$token}"])
+        // Andrea ve su chat con Alejandro y el grupo de ejemplo
+        $chats = $this->getJson('/api/conversations', ['Authorization' => "Bearer {$token}"])
             ->assertOk()
-            ->assertJsonCount(1)
-            ->assertJsonPath('0.user.name', 'Alejandro Campos');
+            ->assertJsonCount(2)
+            ->json();
+
+        $this->assertContains('Alejandro Campos', array_column($chats, 'name'));
+        $this->assertContains('Equipo Docker', array_column($chats, 'name'));
     }
 }

@@ -11,7 +11,7 @@ const RealtimeContext = createContext<{ subscribe: (fn: Listener) => () => void;
   status: "connecting",
 });
 
-const EVENT_TYPES = ["message", "typing", "read"] as const;
+const EVENT_TYPES = ["message", "message_updated", "typing", "read", "presence", "conversations"] as const;
 
 /**
  * Abre una sola conexión SSE (/api/stream) para toda la app y reparte los eventos

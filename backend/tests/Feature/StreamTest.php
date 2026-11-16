@@ -37,7 +37,7 @@ class StreamTest extends TestCase
         $this->assertStringContainsString('text/event-stream', $response->headers->get('Content-Type'));
 
         $body = $response->streamedContent();
-        $this->assertStringContainsString('event: message', $body);
+        $this->assertStringContainsString("event: message\n", $body);
         $this->assertStringContainsString('nuevo para Beto', $body);
         $this->assertStringNotContainsString('viejo', $body);
         $this->assertStringContainsString('"isSelf":false', $body);
@@ -55,7 +55,7 @@ class StreamTest extends TestCase
 
         $body = $this->actingAs($beto, 'api')->get('/api/stream')->streamedContent();
 
-        $this->assertStringNotContainsString('event: message', $body);
+        $this->assertStringNotContainsString("event: message\n", $body);
         $this->assertStringContainsString('retry: 2000', $body);
     }
 
@@ -71,5 +71,20 @@ class StreamTest extends TestCase
         $this->assertStringContainsString('event: typing', $body);
         $this->assertStringContainsString('"userId":"'.$ana->id.'"', $body);
         $this->assertStringContainsString('"typing":true', $body);
+    }
+
+    public function test_stream_reports_edits_and_reactions(): void
+    {
+        [$ana, $beto] = User::factory()->count(2)->create();
+        $chat = Conversation::between($ana, $beto);
+        $message = $chat->messages()->create(['sender_id' => $ana->id, 'content' => 'original']);
+
+        $this->travel(2)->seconds();
+        $this->actingAs($ana, 'api')->patchJson("/api/conversations/{$chat->id}/messages/{$message->id}", ['content' => 'editado'])->assertOk();
+
+        $body = $this->actingAs($beto, 'api')->get('/api/stream')->streamedContent();
+
+        $this->assertStringContainsString("event: message_updated\n", $body);
+        $this->assertStringContainsString('editado', $body);
     }
 }
