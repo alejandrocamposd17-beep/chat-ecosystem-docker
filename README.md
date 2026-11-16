@@ -1,6 +1,10 @@
-# Chat Ecosystem: imágenes Docker eficientes con builds multi-stage
+# Chat Ecosystem: chat en tiempo real con Next.js, Laravel y Docker
 
-Ecosistema de producción de una aplicación de chat compuesto por tres servicios orquestados con Docker Compose:
+[![CI](https://github.com/alejandrocamposd17-beep/chat-ecosystem-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/alejandrocamposd17-beep/chat-ecosystem-docker/actions/workflows/ci.yml)
+
+**Autor:** Alejandro Campos
+
+Aplicación de chat con cuentas de usuario y mensajes en tiempo real, empaquetada como un ecosistema de producción de tres servicios orquestados con Docker Compose:
 
 | Servicio | Tecnología | Imagen base |
 |---|---|---|
@@ -12,14 +16,18 @@ Cada imagen se construye con **builds multi-stage** para separar la fase de cons
 
 ---
 
-## Integrantes
+## Funcionalidades
 
-| Nombre |
-|---|
-| Alejandro Campos |
-| Miguel Ramos |
-| Stephanie Torres |
-| Gerson Sanchez |
+- **Cuentas de usuario**: registro e inicio de sesión. La API emite un token opaco (en la base solo se guarda su hash SHA-256) y Next.js lo guarda en una **cookie httpOnly**: el JavaScript del navegador nunca lo ve.
+- **Chats entre usuarios reales**: busca a otra persona, inicia un chat y ambos ven la misma conversación.
+- **Tiempo real con Server-Sent Events**: los mensajes llegan al instante, con indicador de **"escribiendo..."**, confirmación de **"Visto"** y contador de **no leídos** en la lista de chats.
+- **Historial paginado**: los mensajes se cargan de 50 en 50 ("Cargar mensajes anteriores").
+- **Interfaz adaptable**: en celular se ve la lista o el chat, con botón para volver.
+- **Pruebas y CI**: pruebas de la API con PHPUnit y GitHub Actions que valida backend, frontend y el ecosistema Docker completo.
+
+### Cuentas de demostración
+
+El seeder crea cinco usuarios con la contraseña `password`: `alejandro@chat.test`, `andrea@chat.test`, `carlos@chat.test`, `sofia@chat.test` y `diego@chat.test`. Para ver el tiempo real, abre dos navegadores (o una ventana privada) y entra con una cuenta distinta en cada uno.
 
 ---
 
@@ -27,18 +35,36 @@ Cada imagen se construye con **builds multi-stage** para separar la fase de cons
 
 ```mermaid
 flowchart LR
-    user([Navegador]) -- ":3000" --> web["web<br/>Next.js standalone<br/>node:24-alpine"]
-    user -- ":8000/api" --> api["api<br/>Nginx + PHP-FPM<br/>php:8.3-fpm-alpine"]
-    web -- "http://api:8000/api<br/>(red frontend)" --> api
+    user([Navegador]) -- ":3000<br/>páginas, /api/proxy, /api/stream (SSE)" --> web["web<br/>Next.js standalone<br/>node:24-alpine"]
+    web -- "http://api:8000/api<br/>Bearer token (red frontend)" --> api["api<br/>Nginx + PHP-FPM<br/>php:8.3-fpm-alpine"]
     api -- "3306<br/>(red backend)" --> db[("db<br/>mysql:8.0")]
     db --- vol[("volumen db_data")]
+```
+
+**Flujo de un mensaje en tiempo real:**
+
+```mermaid
+sequenceDiagram
+    participant A as Navegador de Ana
+    participant W as Next.js (web)
+    participant L as Laravel (api)
+    participant B as Navegador de Beto
+    B->>W: EventSource /api/stream (cookie httpOnly)
+    W->>L: GET /api/stream (Bearer token)
+    A->>W: POST /api/proxy?path=conversations/1/messages
+    W->>L: POST /api/conversations/1/messages
+    L-->>W: 201 mensaje guardado
+    L-->>W: event: message (stream de Beto)
+    W-->>B: event: message
+    B->>W: POST /api/proxy?path=conversations/1/read
+    L-->>A: event: read → "Visto"
 ```
 
 - **Red `frontend`**: conecta `web` con `api`.
 - **Red `backend`**: conecta `api` con `db`. El contenedor `web` no está en esta red, por lo que no puede alcanzar la base de datos.
 - **MySQL no publica el puerto 3306 al host**: solo es accesible desde la API.
 - **Orden de arranque**: `db` (healthy) -> `api` (healthy) -> `web`. Compose espera a que cada servicio pase su healthcheck, no solo a que el contenedor inicie.
-- **Dos URLs de API**: el navegador usa `NEXT_PUBLIC_API_URL` (`localhost:8000`), mientras que los Server Components usan `API_INTERNAL_URL` (`api:8000`), resuelta por el DNS interno de Docker.
+- **El navegador solo habla con Next.js** (patrón *Backend for Frontend*): los Server Components y los Route Handlers (`/api/session`, `/api/proxy`, `/api/stream`) llaman a Laravel por `API_INTERNAL_URL` (`http://api:8000/api`, DNS interno de Docker) agregando el token de la cookie. La API sigue publicada en `:8000` para pruebas directas.
 
 ## Estructura del repositorio
 
@@ -49,7 +75,6 @@ flowchart LR
 ├── compare-images.sh               # Comparación básica vs multi-stage
 ├── README.md
 ├── image-comparison.md             # Resultados de compare-images.sh
-├── docs/                           # Capturas de evidencia
 ├── frontend/                       # Next.js (App Router)
 │   ├── Dockerfile
 │   ├── Dockerfile.basic            # Versión "antes", solo para comparar
@@ -80,13 +105,23 @@ flowchart LR
 
 ## Endpoints de la API
 
+Todas las rutas, excepto registro e inicio de sesión, requieren `Authorization: Bearer <token>`. Las conversaciones ajenas responden 404 (no se revela que existen).
+
 | Método | Ruta | Respuesta |
 |---|---|---|
-| GET | `/api/me` | `User` del usuario actual |
-| GET | `/api/conversations` | `Conversation[]` ordenadas por actividad reciente |
+| POST | `/api/auth/register` | `{ user, token }` (201). Límite: 10 por minuto por IP |
+| POST | `/api/auth/login` | `{ user, token }`. Límite: 10 intentos por minuto por cuenta e IP |
+| POST | `/api/auth/logout` | Revoca solo el token usado |
+| GET | `/api/me` | `User` autenticado |
+| GET | `/api/users?search=` | Personas con las que se puede iniciar un chat |
+| GET | `/api/conversations` | `Conversation[]` del usuario, con `unreadCount` y `otherLastReadAt` |
+| POST | `/api/conversations` | Abre o reutiliza el chat con `{ "userId": 2 }` (201 / 200) |
 | GET | `/api/conversations/{id}` | `Conversation` |
-| GET | `/api/conversations/{id}/messages` | `Message[]` (últimos 100) |
-| POST | `/api/conversations/{id}/messages` | `Message` creado (201). Body: `{ "content": "..." }`, límite de 30 por minuto |
+| GET | `/api/conversations/{id}/messages?before=` | `Message[]` de 50 en 50 |
+| POST | `/api/conversations/{id}/messages` | `Message` creado (201). Límite: 30 por minuto |
+| POST | `/api/conversations/{id}/read` | Marca la conversación como leída |
+| POST | `/api/conversations/{id}/typing` | Avisa "escribiendo..." durante 5 segundos |
+| GET | `/api/stream` | Server-Sent Events: `message`, `typing` y `read` |
 | GET | `/up` | Healthcheck de Laravel |
 
 Los API Resources devuelven exactamente las claves de las interfaces TypeScript del frontend (`avatarUrl`, `chatId`, `isSelf`, etc.), con IDs como `string` y fechas en ISO 8601.
@@ -118,11 +153,10 @@ Los API Resources devuelven exactamente las claves de las interfaces TypeScript 
    ```bash
    docker compose ps
    ```
-   - Frontend: http://localhost:3000
-   - API: http://localhost:8000/api/conversations
-   - Healthcheck: http://localhost:8000/up
+   - Frontend: http://localhost:3000 (inicia sesión con una cuenta de demostración)
+   - Healthcheck de la API: http://localhost:8000/up
 
-Al primer arranque la API ejecuta las migraciones y carga conversaciones de ejemplo (el seeder solo inserta datos si la base está vacía).
+Al primer arranque la API ejecuta las migraciones y carga usuarios y conversaciones de ejemplo (el seeder solo inserta datos si la base está vacía). Si ya tenías un volumen de una versión anterior, ejecuta `docker compose down -v` para recrear los datos con las cuentas de demostración.
 
 Para detener: `docker compose down` (los datos se conservan en el volumen). Para borrar también los datos: `docker compose down -v`.
 
@@ -149,8 +183,8 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 | `FRONTEND_URL` | api | Origen(es) permitido(s) para CORS |
 | `RUN_MIGRATIONS` | api | Ejecuta `migrate --force` al iniciar |
 | `SEED_DATABASE` | api | Carga datos de ejemplo si la base está vacía |
-| `CHAT_SELF_USER_ID` | api | Usuario que representa "yo" en el chat |
-| `NEXT_PUBLIC_API_URL` | web (build) | URL de la API para el navegador, se incrusta en el build |
+| `CHAT_TOKEN_TTL_DAYS` | api | Días de vigencia de los tokens de sesión (30 por defecto) |
+| `API_INTERNAL_URL` | web | URL de la API desde Next.js (en Compose: `http://api:8000/api`) |
 | `API_PORT` / `WEB_PORT` | host | Puertos publicados en el host |
 
 ## Decisiones técnicas
@@ -160,7 +194,8 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 - **Tres etapas (`deps`, `builder`, `runner`)**: las dependencias se instalan en una etapa aislada copiando solo `package.json` y el lockfile. Mientras estos no cambien, Docker reutiliza la capa y el build se salta la instalación.
 - **`output: "standalone"`**: Next.js genera un `server.js` mínimo y copia solo los módulos que la app realmente usa. La imagen final no contiene `node_modules` completos, devDependencies ni código fuente. `node server.js` es el equivalente optimizado de `next start` para contenedores.
 - **`node:24-alpine` en lugar de `node:20-alpine`**: Node 20 llegó a fin de soporte en abril de 2026 y ya no recibe parches de seguridad. Node 24 es la versión LTS activa y cumple el requisito de Next.js 16 (Node 20.9+). Alpine mantiene la imagen base pequeña.
-- **`NEXT_PUBLIC_API_URL` como `ARG`**: las variables `NEXT_PUBLIC_*` se incrustan en el JavaScript durante `next build`, por lo que deben existir en la etapa de build.
+- **Backend for Frontend con cookie httpOnly**: el token de la API nunca llega al JavaScript del navegador (protege ante XSS). Los Route Handlers que cambian datos verifican el encabezado `Origin` y la cookie es `SameSite=Lax` (protección CSRF). `src/proxy.ts` redirige al login si no hay sesión. Como no hay variables `NEXT_PUBLIC_*`, la misma imagen sirve para cualquier entorno.
+- **Tiempo real con `EventSource`**: una sola conexión SSE para toda la app (`RealtimeProvider`) reparte los eventos a la lista de chats y a la ventana abierta. Al reconectar, el navegador envía `Last-Event-ID` y no se pierden mensajes.
 - **Build independiente de la API**: con Cache Components (activo por defecto en Next.js 16.4), los datos sin caché se cargan dentro de `<Suspense>`. Next.js prerenderiza el "shell" estático y transmite los datos en cada petición, por lo que `next build` no necesita que la API esté levantada.
 - **Fuentes del sistema en lugar de Google Fonts**: el build no depende de descargar fuentes de internet, lo que lo hace más rápido y reproducible.
 - **Sin npm, npx, corepack ni yarn en la imagen final**: el servidor standalone solo necesita `node`. Estas herramientas venían en la imagen base y traían vulnerabilidades altas en sus dependencias internas, así que se eliminan en la etapa runner.
@@ -178,7 +213,9 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 - **`apk upgrade` en la etapa runtime**: aplica los parches de seguridad de Alpine disponibles al momento del build. Eliminó una vulnerabilidad crítica (`brotli`) heredada de la imagen base.
 - **Nginx + PHP-FPM en el mismo contenedor**: Nginx atiende el puerto 8000 y pasa las peticiones PHP a PHP-FPM por `127.0.0.1:9000`, que nunca se expone. Así el ecosistema se mantiene en tres servicios. La alternativa (Nginx en un contenedor separado) escala mejor de forma independiente, pero requiere compartir `public/` entre contenedores.
 - **OPcache con `validate_timestamps=0`**: el código no cambia dentro de un contenedor, así que PHP no revisa archivos en cada petición.
-- **Seguridad**: `php.ini-production`, `expose_php=Off`, `server_tokens off`, bloqueo de archivos ocultos en Nginx, CORS restringido al origen del frontend, rate limit en el envío de mensajes, workers de PHP-FPM como `www-data` y solo `storage/` y `bootstrap/cache/` con permisos de escritura. El `.env` nunca entra a la imagen: la configuración llega por variables de entorno.
+- **Autenticación sin dependencias extra**: guard propio con `Auth::viaRequest`. Los tokens son aleatorios de 64 caracteres, se guardan como hash SHA-256, vencen a los 30 días y `logout` revoca solo el de la sesión actual. El login responde el mismo error si el correo no existe o la contraseña es incorrecta.
+- **Server-Sent Events en lugar de WebSockets**: el stream (`/api/stream`) usa HTTP normal, así funciona detrás de Nginx y de cualquier proxy sin un servidor extra. Cada conexión dura 25 segundos y el navegador se reconecta solo; Nginx tiene `fastcgi_buffering off` en esa ruta y PHP-FPM sube a 20 procesos porque cada conexión abierta ocupa uno.
+- **Seguridad**: `php.ini-production`, `expose_php=Off`, `server_tokens off`, bloqueo de archivos ocultos en Nginx, CORS restringido al origen del frontend, rate limit en login, registro, mensajes y avisos de escritura, workers de PHP-FPM como `www-data` y solo `storage/` y `bootstrap/cache/` con permisos de escritura. El `.env` nunca entra a la imagen: la configuración llega por variables de entorno.
 - **`php artisan optimize` en runtime**: la caché de configuración y rutas se genera al arrancar, porque las variables de entorno llegan desde Compose y no existen durante el build.
 - **Seeder sin Faker**: Faker es dependencia de desarrollo y no existe en la imagen de producción, por eso los datos de ejemplo están definidos explícitamente. El seeder es idempotente.
 - **Logs a `stderr`**: visibles con `docker compose logs api`.
@@ -198,7 +235,7 @@ Validaciones realizadas durante el desarrollo:
 - `next build` con `output: "standalone"` compila sin la API levantada.
 - El servidor standalone (`node server.js`) se probó contra una API con la misma forma de respuestas: renderiza la lista de chats, la conversación y el estado de error.
 - TypeScript y ESLint sin errores; sintaxis de todos los archivos PHP validada con `php -l`.
-- El ecosistema completo se levantó con `docker compose up`: los tres servicios quedaron `healthy` y se verificó el flujo navegador -> API -> MySQL enviando un mensaje desde el chat (ver Evidencias).
+- El ecosistema completo se levantó con `docker compose up`: los tres servicios quedaron `healthy` y se verificó el flujo navegador -> API -> MySQL enviando un mensaje desde el chat (hoy lo verifica el CI en cada cambio, ver Evidencias).
 
 | Medición | Tamaño |
 |---|---|
@@ -209,7 +246,7 @@ Validaciones realizadas durante el desarrollo:
 
 Para medir el impacto de la optimización, el repositorio incluye las versiones "antes" de cada imagen:
 
-- `frontend/Dockerfile.basic` y `backend/Dockerfile.basic`: representan el enfoque inicial del equipo (una sola etapa, imágenes Debian completas, `COPY . .` antes de instalar dependencias, dependencias de desarrollo incluidas, ejecución como root y servidores de desarrollo). **Solo existen para la comparación, no se usan en producción.**
+- `frontend/Dockerfile.basic` y `backend/Dockerfile.basic`: representan el enfoque inicial (una sola etapa, imágenes Debian completas, `COPY . .` antes de instalar dependencias, dependencias de desarrollo incluidas, ejecución como root y servidores de desarrollo). **Solo existen para la comparación, no se usan en producción.**
 - `compare-images.sh`: construye las cuatro imágenes y mide tamaño, número de capas, tiempo de build en frío y tiempo de rebuild después de un cambio en el código.
 
 ```bash
@@ -257,24 +294,40 @@ Escaneo de las cuatro imágenes con `docker scout quickview`:
 - **Backend: de 159 vulnerabilidades a 15 (91% menos)** y de 397 a 142 paquetes. Un primer escaneo encontró 1 crítica (`brotli`) y 1 alta (`curl`) heredadas de `php:8.3-fpm-alpine`. Con `apk upgrade` se eliminó la crítica. Queda 1 alta con parche reportado por Scout que `apk upgrade` no resolvió al momento del build; se corrige reconstruyendo con `docker compose build --pull --no-cache api` cuando la versión corregida llegue a los repositorios de Alpine o a la imagen base.
 - **Las capas propias de los Dockerfiles no agregan vulnerabilidades**: todas las restantes vienen de las imágenes oficiales de Node.js y PHP.
 
+## Pruebas y CI
+
+```bash
+cd backend && composer install && php artisan test   # requiere PHP 8.3 y Composer
+```
+
+- **Pruebas de la API (PHPUnit, SQLite en memoria)**: registro, login, tokens con hash y vencidos, logout, límites de velocidad, chats entre usuarios, acceso a conversaciones ajenas (404), no leídos y lecturas, paginación, búsqueda de usuarios, stream SSE (mensajes, "escribiendo..." y aislamiento entre usuarios) y las cuentas del seeder.
+- **GitHub Actions** en cada push y PR:
+  - **API**: pruebas con PHPUnit y estilo con Laravel Pint.
+  - **Frontend**: ESLint, verificación de tipos con TypeScript y `next build`.
+  - **Ecosistema Docker**: construye las imágenes, levanta los tres servicios con `docker compose up`, espera a que estén `healthy` y prueba el flujo real (login a través de Next.js y lista de chats).
+
+## Demo en Render
+
+`render.yaml` publica dos servicios gratuitos en Render (API y frontend). La demo usa SQLite dentro del contenedor de la API, así que los datos vuelven a los de ejemplo en cada reinicio.
+
+1. En Render: **New → Blueprint** y elige este repositorio.
+2. Render crea `chat-ecosystem-api-alejandro` y `chat-ecosystem-web-alejandro`. Abre la URL del servicio web e inicia sesión con una cuenta de demostración.
+3. Si Render asignó otra URL a la API, actualiza `API_INTERNAL_URL` del servicio web con `https://<url-de-la-api>/api`.
+
+En el plan gratuito los servicios se suspenden tras 15 minutos sin uso: la primera visita tarda cerca de un minuto en despertar.
+
 ## Limitaciones conocidas
 
-- **Sin autenticación**: la API no tiene login; el usuario actual se define con `CHAT_SELF_USER_ID`. En un entorno real se agregaría autenticación (por ejemplo, Laravel Sanctum).
-- **Actualización por polling**: el frontend consulta mensajes nuevos cada 4 segundos. Una versión en tiempo real usaría WebSockets (por ejemplo, Laravel Reverb).
+- **SSE ocupa un proceso de PHP-FPM por conexión abierta**: con 20 procesos alcanza para una demo o un equipo pequeño. Para muchos usuarios simultáneos convendría un servidor de WebSockets (por ejemplo, Laravel Reverb) o un runtime asíncrono.
+- **Chats de dos personas**: el modelo de participantes ya permite grupos, pero la interfaz solo crea chats 1 a 1.
 - **Procesos maestros como root en la API**: los workers de PHP-FPM y Nginx corren como `www-data` y `nginx`, pero sus procesos maestros corren como root dentro del contenedor, y Docker Scout lo señala. La alternativa es mover Nginx a su propio contenedor y ejecutar PHP-FPM con un usuario sin privilegios.
 - **Nginx y PHP-FPM sin supervisor de procesos**: si PHP-FPM se detiene, Nginx mantiene vivo el contenedor. El healthcheck lo detecta y lo marca como `unhealthy`, pero Docker Compose no lo reinicia automáticamente por ese estado.
 - **Parches de seguridad atados al momento del build**: `apk upgrade` aplica los parches disponibles cuando se construye la imagen; para incorporar parches nuevos hay que reconstruir con `--pull --no-cache`.
-- **Interfaz pensada para escritorio**: la barra lateral tiene ancho fijo y no está optimizada para celular.
 
 ## Evidencias
 
-**Los tres servicios en estado healthy.** En la columna PORTS se ve que `db` no publica puertos al host (solo `3306/tcp`), mientras que `api` y `web` sí (`0.0.0.0:8000` y `0.0.0.0:3000`):
-
-![docker compose ps](docs/docker-compose-ps.png)
-
-**La aplicación funcionando de punta a punta** (navegador -> API -> MySQL):
-
-![Chat funcionando](docs/chat-funcionando.png)
+- **Ecosistema Docker funcionando**: el job *Ecosistema Docker* de [GitHub Actions](https://github.com/alejandrocamposd17-beep/chat-ecosystem-docker/actions/workflows/ci.yml) levanta los tres servicios en cada cambio, imprime `docker compose ps` con los servicios `healthy` y prueba el login y la lista de chats a través de Next.js.
+- **Aplicación en vivo**: ver [Demo en Render](#demo-en-render).
 
 ## Comandos útiles
 
@@ -289,6 +342,7 @@ docker compose down -v && docker compose up -d --build   # Reinicio desde cero
 ## Solución de problemas
 
 - **El navegador muestra error de CORS**: revisa que `FRONTEND_URL` coincida exactamente con la URL donde abres el frontend.
-- **El frontend llama a una URL vieja de la API**: `NEXT_PUBLIC_API_URL` se incrusta en el build; ejecuta `docker compose build web`.
+- **No puedo iniciar sesión con las cuentas de demostración**: el volumen tiene datos de una versión anterior; ejecuta `docker compose down -v && docker compose up -d --build`.
+- **Los mensajes no llegan en tiempo real**: revisa en las herramientas del navegador que `/api/stream` esté abierto (tipo `eventsource`); si hay un proxy delante, debe permitir respuestas en streaming.
 - **`MissingAppKeyException`**: falta `APP_KEY` en `.env` (paso 3).
 - **Cambié las credenciales de MySQL y ya no conecta**: el script de init y las credenciales solo se aplican al crear el volumen; usa `docker compose down -v`.
