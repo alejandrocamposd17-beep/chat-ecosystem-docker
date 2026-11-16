@@ -6,11 +6,6 @@ import { useState, useTransition } from "react";
 
 type Mode = "login" | "register";
 
-const DEMO_ACCOUNTS = [
-  { email: "alejandro@chat.test", name: "Alejandro" },
-  { email: "andrea@chat.test", name: "Andrea" },
-];
-
 export default function AuthForm({ mode, expired = false }: { mode: Mode; expired?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -21,14 +16,16 @@ export default function AuthForm({ mode, expired = false }: { mode: Mode; expire
   const update = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  function submit(values: typeof form) {
+  function submit(values: typeof form | null) {
     setErrors({});
     setMessage(null);
     startTransition(async () => {
-      const res = await fetch(mode === "login" ? "/api/session" : "/api/session/register", {
+      // values null: entrar como invitado (cuenta temporal, sin registro)
+      const url = values === null ? "/api/session/guest" : mode === "login" ? "/api/session" : "/api/session/register";
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(values ?? {}),
       });
 
       if (res.ok) {
@@ -115,25 +112,18 @@ export default function AuthForm({ mode, expired = false }: { mode: Mode; expire
           </button>
         </form>
 
-        {isLogin && (
-          <div className="mt-5 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600 dark:bg-neutral-800/60 dark:text-neutral-300">
-            <p className="font-medium">Cuentas de demostración (contraseña: password)</p>
-            <p className="mt-1">Abre dos navegadores y entra con una en cada uno para ver los mensajes en tiempo real.</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {DEMO_ACCOUNTS.map((account) => (
-                <button
-                  key={account.email}
-                  type="button"
-                  disabled={pending}
-                  onClick={() => submit({ ...form, email: account.email, password: "password" })}
-                  className="rounded-lg border border-neutral-300 px-2.5 py-1 hover:bg-white dark:border-neutral-600 dark:hover:bg-neutral-700"
-                >
-                  Entrar como {account.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="mt-5 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600 dark:bg-neutral-800/60 dark:text-neutral-300">
+          <p className="font-medium">¿Solo quieres probarlo?</p>
+          <p className="mt-1">Entra sin registrarte con una cuenta de invitado temporal (dura 24 horas). Puedes cambiarle el nombre en tu perfil.</p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => submit(null)}
+            className="mt-2 w-full rounded-lg border border-indigo-300 bg-white py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-700 dark:bg-neutral-900 dark:text-indigo-300 dark:hover:bg-neutral-800"
+          >
+            Probar sin registrarme
+          </button>
+        </div>
 
         <p className="mt-5 text-center text-sm text-neutral-500">
           {isLogin ? "¿No tienes cuenta? " : "¿Ya tienes cuenta? "}
