@@ -19,15 +19,22 @@ Cada imagen se construye con **builds multi-stage** para separar la fase de cons
 ## Funcionalidades
 
 - **Cuentas de usuario**: registro e inicio de sesión. La API emite un token opaco (en la base solo se guarda su hash SHA-256) y Next.js lo guarda en una **cookie httpOnly**: el JavaScript del navegador nunca lo ve.
-- **Chats entre usuarios reales**: busca a otra persona, inicia un chat y ambos ven la misma conversación.
-- **Tiempo real con Server-Sent Events**: los mensajes llegan al instante, con indicador de **"escribiendo..."**, confirmación de **"Visto"** y contador de **no leídos** en la lista de chats.
+- **Chats 1 a 1 y grupos**: busca a otra persona e inicia un chat, o crea un grupo (hasta 50 integrantes). El administrador del grupo puede renombrarlo, agregar y quitar integrantes; cualquiera puede salirse. Los cambios aparecen como mensajes del sistema.
+- **Tiempo real con Server-Sent Events**: los mensajes llegan al instante, con indicador de **"escribiendo..."** (en grupos, con el nombre de quién escribe), confirmación de **"Visto"** y contador de **no leídos**.
+- **Presencia en vivo**: "En línea" o "Visto por última vez hoy a las 10:30", actualizado sin recargar.
+- **Imágenes y archivos adjuntos**: fotos que se ven dentro del chat y documentos (PDF, Word, Excel, ZIP, TXT) de hasta 5 MB.
+- **Responder, editar y eliminar mensajes**: responde citando un mensaje (clic en la cita para saltar al original), corrige tus mensajes (se marcan como "editado") o elimínalos ("Mensaje eliminado").
+- **Reacciones con emoji**: 👍 ❤️ 😂 😮 😢 🙏, sincronizadas en tiempo real.
+- **Búsqueda dentro de la conversación**: por texto o nombre de archivo, con salto al mensaje encontrado.
+- **Notificaciones del navegador** cuando llega un mensaje y la pestaña no está a la vista, y contador de no leídos en el título de la pestaña: `(3) Chat en tiempo real`.
+- **Perfil de usuario**: cambiar nombre, foto de perfil y contraseña (al cambiarla se cierran las demás sesiones).
 - **Historial paginado**: los mensajes se cargan de 50 en 50 ("Cargar mensajes anteriores").
-- **Interfaz adaptable**: en celular se ve la lista o el chat, con botón para volver.
-- **Pruebas y CI**: pruebas de la API con PHPUnit y GitHub Actions que valida backend, frontend y el ecosistema Docker completo.
+- **Interfaz adaptable**: en celular se ve la lista o el chat, con botón para volver y un menú ⋯ para las acciones de cada mensaje.
+- **Pruebas y CI**: PHPUnit para la API, pruebas de punta a punta con Playwright (dos navegadores conversando a la vez) y GitHub Actions que valida backend, frontend y el ecosistema Docker completo.
 
 ### Cuentas de demostración
 
-El seeder crea cinco usuarios con la contraseña `password`: `alejandro@chat.test`, `andrea@chat.test`, `carlos@chat.test`, `sofia@chat.test` y `diego@chat.test`. Para ver el tiempo real, abre dos navegadores (o una ventana privada) y entra con una cuenta distinta en cada uno.
+El seeder crea cinco usuarios con la contraseña `password`: `alejandro@chat.test`, `andrea@chat.test`, `carlos@chat.test`, `sofia@chat.test` y `diego@chat.test`, además del grupo *Equipo Docker*. Para ver el tiempo real, abre dos navegadores (o una ventana privada) y entra con una cuenta distinta en cada uno.
 
 ---
 
@@ -39,6 +46,7 @@ flowchart LR
     web -- "http://api:8000/api<br/>Bearer token (red frontend)" --> api["api<br/>Nginx + PHP-FPM<br/>php:8.3-fpm-alpine"]
     api -- "3306<br/>(red backend)" --> db[("db<br/>mysql:8.0")]
     db --- vol[("volumen db_data")]
+    api --- files[("volumen api_files<br/>adjuntos y fotos")]
 ```
 
 **Flujo de un mensaje en tiempo real:**
@@ -81,8 +89,8 @@ sequenceDiagram
 │   ├── .dockerignore
 │   ├── next.config.ts              # output: "standalone"
 │   └── src/
-│       ├── app/                    # layout, página inicial y /chat/[id]
-│       ├── components/             # lista de chats, ventana de chat, avatar
+│       ├── app/                    # login, /chat/[id], /profile y Route Handlers del BFF
+│       ├── components/             # lista de chats, ventana de chat, burbujas, grupos, perfil
 │       ├── lib/api.ts              # cliente de la API (URL interna vs pública)
 │       └── types/chat.ts           # modelos User, Message, Conversation
 ├── backend/                        # Laravel 13 (API REST)
@@ -93,12 +101,13 @@ sequenceDiagram
 │   │   ├── entrypoint.sh
 │   │   ├── nginx/default.conf
 │   │   └── php/zz-production.ini
-│   ├── app/Http/Controllers/Api/   # Conversation, Message, User
+│   ├── app/Http/Controllers/Api/   # Auth, Conversation, Participant, Message, Reaction, Profile, Stream
 │   ├── app/Http/Resources/         # JSON con la misma forma que los tipos TS
-│   ├── app/Models/                 # User, Conversation, Message
+│   ├── app/Models/                 # User, Conversation, Message, MessageReaction
 │   ├── database/migrations/
 │   ├── database/seeders/
 │   └── routes/api.php
+├── e2e/                            # Pruebas de punta a punta con Playwright
 └── database/
     └── init/01-charset.sh          # Script de inicialización de MySQL
 ```
@@ -112,16 +121,24 @@ Todas las rutas, excepto registro e inicio de sesión, requieren `Authorization:
 | POST | `/api/auth/register` | `{ user, token }` (201). Límite: 10 por minuto por IP |
 | POST | `/api/auth/login` | `{ user, token }`. Límite: 10 intentos por minuto por cuenta e IP |
 | POST | `/api/auth/logout` | Revoca solo el token usado |
-| GET | `/api/me` | `User` autenticado |
+| GET / PATCH | `/api/me` | `User` autenticado / cambia el nombre |
+| POST / DELETE | `/api/me/avatar` | Sube (JPG, PNG o WebP, máx. 2 MB) o quita la foto de perfil |
+| PUT | `/api/me/password` | Cambia la contraseña (pide la actual) y revoca las demás sesiones |
+| GET | `/api/users/{id}/avatar` | Foto de perfil |
 | GET | `/api/users?search=` | Personas con las que se puede iniciar un chat |
-| GET | `/api/conversations` | `Conversation[]` del usuario, con `unreadCount` y `otherLastReadAt` |
-| POST | `/api/conversations` | Abre o reutiliza el chat con `{ "userId": 2 }` (201 / 200) |
-| GET | `/api/conversations/{id}` | `Conversation` |
-| GET | `/api/conversations/{id}/messages?before=` | `Message[]` de 50 en 50 |
-| POST | `/api/conversations/{id}/messages` | `Message` creado (201). Límite: 30 por minuto |
+| GET | `/api/conversations` | `Conversation[]` del usuario (chats y grupos), con `unreadCount` y `readStates` |
+| POST | `/api/conversations` | `{ "userId": 2 }` abre o reutiliza un chat; `{ "name": "...", "userIds": [2, 3] }` crea un grupo |
+| GET / PATCH | `/api/conversations/{id}` | `Conversation` / renombra el grupo (solo administrador) |
+| POST | `/api/conversations/{id}/participants` | Agrega un integrante (solo administrador) |
+| DELETE | `/api/conversations/{id}/participants/{userId}` | Quita a un integrante (administrador) o sale del grupo (uno mismo) |
+| GET | `/api/conversations/{id}/messages?before=&search=` | `Message[]` de 50 en 50, o resultados de búsqueda |
+| POST | `/api/conversations/{id}/messages` | `Message` creado (201), JSON o multipart con `attachment` y `replyToId`. Límite: 30 por minuto, 10 archivos por minuto |
+| PATCH / DELETE | `/api/conversations/{id}/messages/{messageId}` | Edita o elimina un mensaje propio |
+| POST | `/api/conversations/{id}/messages/{messageId}/reactions` | Pone o quita una reacción `{ "emoji": "👍" }` |
+| GET | `/api/attachments/{messageId}` | Descarga el adjunto (solo integrantes de la conversación) |
 | POST | `/api/conversations/{id}/read` | Marca la conversación como leída |
 | POST | `/api/conversations/{id}/typing` | Avisa "escribiendo..." durante 5 segundos |
-| GET | `/api/stream` | Server-Sent Events: `message`, `typing` y `read` |
+| GET | `/api/stream` | Server-Sent Events: `message`, `message_updated`, `typing`, `read`, `presence` y `conversations` |
 | GET | `/up` | Healthcheck de Laravel |
 
 Los API Resources devuelven exactamente las claves de las interfaces TypeScript del frontend (`avatarUrl`, `chatId`, `isSelf`, etc.), con IDs como `string` y fechas en ISO 8601.
@@ -215,7 +232,9 @@ El `composer.json` fija `config.platform.php = 8.3.0`, así que Composer resuelv
 - **OPcache con `validate_timestamps=0`**: el código no cambia dentro de un contenedor, así que PHP no revisa archivos en cada petición.
 - **Autenticación sin dependencias extra**: guard propio con `Auth::viaRequest`. Los tokens son aleatorios de 64 caracteres, se guardan como hash SHA-256, vencen a los 30 días y `logout` revoca solo el de la sesión actual. El login responde el mismo error si el correo no existe o la contraseña es incorrecta.
 - **Server-Sent Events en lugar de WebSockets**: el stream (`/api/stream`) usa HTTP normal, así funciona detrás de Nginx y de cualquier proxy sin un servidor extra. Cada conexión dura 25 segundos y el navegador se reconecta solo; Nginx tiene `fastcgi_buffering off` en esa ruta y PHP-FPM sube a 20 procesos porque cada conexión abierta ocupa uno.
-- **Seguridad**: `php.ini-production`, `expose_php=Off`, `server_tokens off`, bloqueo de archivos ocultos en Nginx, CORS restringido al origen del frontend, rate limit en login, registro, mensajes y avisos de escritura, workers de PHP-FPM como `www-data` y solo `storage/` y `bootstrap/cache/` con permisos de escritura. El `.env` nunca entra a la imagen: la configuración llega por variables de entorno.
+- **Seguridad**: `php.ini-production`, `expose_php=Off`, `server_tokens off`, bloqueo de archivos ocultos en Nginx, CORS restringido al origen del frontend, rate limit en login, registro, mensajes, archivos, reacciones y avisos de escritura, workers de PHP-FPM como `www-data` y solo `storage/` y `bootstrap/cache/` con permisos de escritura. El `.env` nunca entra a la imagen: la configuración llega por variables de entorno.
+- **Archivos adjuntos privados**: se guardan fuera de `public/` (disco `local`, volumen `api_files`) y solo se descargan a través de la API, que verifica que quien los pide sea integrante de la conversación; el navegador los recibe por el BFF de Next.js con la cookie httpOnly. El tipo se valida por el contenido real del archivo y no por la extensión (un `.exe` renombrado a `.png` se rechaza); SVG y HTML no se aceptan porque pueden ejecutar scripts. Se descargan con `X-Content-Type-Options: nosniff` y `Content-Security-Policy: sandbox`, y solo las imágenes se muestran en línea; el resto se fuerza como descarga. El nombre original se limpia antes de guardarlo y el archivo se guarda con un nombre aleatorio.
+- **Permisos por autor y por rol**: solo el autor edita o borra su mensaje (al borrarlo se eliminan también el archivo y las reacciones); solo el administrador renombra el grupo o quita integrantes. Si el administrador sale, el integrante más antiguo toma su lugar.
 - **Cachés de configuración, rutas y eventos en runtime** (`config:cache`, `route:cache`, `event:cache`): se generan al arrancar, porque las variables de entorno llegan desde Compose y no existen durante el build. No se usa `optimize` porque también compila vistas y la API no tiene vistas Blade.
 - **Seeder sin Faker**: Faker es dependencia de desarrollo y no existe en la imagen de producción, por eso los datos de ejemplo están definidos explícitamente. El seeder es idempotente.
 - **Logs a `stderr`**: visibles con `docker compose logs api`.
@@ -300,11 +319,12 @@ Escaneo de las cuatro imágenes con `docker scout quickview`:
 cd backend && composer install && php artisan test   # requiere PHP 8.3 y Composer
 ```
 
-- **Pruebas de la API (PHPUnit, SQLite en memoria)**: registro, login, tokens con hash y vencidos, logout, límites de velocidad, chats entre usuarios, acceso a conversaciones ajenas (404), no leídos y lecturas, paginación, búsqueda de usuarios, stream SSE (mensajes, "escribiendo..." y aislamiento entre usuarios) y las cuentas del seeder.
+- **Pruebas de la API (PHPUnit, SQLite en memoria)**: registro, login, tokens con hash y vencidos, logout, límites de velocidad, chats entre usuarios, acceso a conversaciones ajenas (404), no leídos y lecturas, paginación, búsqueda de usuarios y de mensajes, grupos y permisos de administrador, adjuntos (tipos permitidos, archivos disfrazados, descarga solo para integrantes), edición y borrado solo por el autor, reacciones, respuestas, perfil y contraseña, stream SSE (mensajes, ediciones, reacciones, "escribiendo..." y aislamiento entre usuarios) y las cuentas del seeder.
+- **Pruebas de punta a punta (Playwright, `e2e/`)**: dos navegadores con sesiones distintas (Alejandro y Andrea) contra el ecosistema levantado con Docker: "escribiendo...", mensaje en tiempo real, "Visto", reacción, envío de una imagen y mensajes de grupo.
 - **GitHub Actions** en cada push y PR:
   - **API**: pruebas con PHPUnit y estilo con Laravel Pint.
   - **Frontend**: ESLint, verificación de tipos con TypeScript y `next build`.
-  - **Ecosistema Docker**: construye las imágenes, levanta los tres servicios con `docker compose up`, espera a que estén `healthy` y prueba el flujo real (login a través de Next.js y lista de chats).
+  - **Ecosistema Docker**: construye las imágenes, levanta los tres servicios con `docker compose up`, espera a que estén `healthy` y prueba el flujo real (login a través de Next.js y lista de chats) y después corre las pruebas de Playwright contra esos contenedores.
 
 ## Demo en Render
 
@@ -319,7 +339,9 @@ En el plan gratuito los servicios se suspenden tras 15 minutos sin uso: la prime
 ## Limitaciones conocidas
 
 - **SSE ocupa un proceso de PHP-FPM por conexión abierta**: con 20 procesos alcanza para una demo o un equipo pequeño. Para muchos usuarios simultáneos convendría un servidor de WebSockets (por ejemplo, Laravel Reverb) o un runtime asíncrono.
-- **Chats de dos personas**: el modelo de participantes ya permite grupos, pero la interfaz solo crea chats 1 a 1.
+- **Server-Sent Events en lugar de WebSockets**: SSE cubre todo lo que necesita el chat (el servidor empuja eventos y el navegador envía por HTTP normal) sin otro servicio que mantener. Migrar a Laravel Reverb implicaría un cuarto contenedor (servidor de WebSockets) y nuevas dependencias de PHP y npm; tiene sentido cuando haya muchos usuarios simultáneos.
+- **Archivos en disco local**: los adjuntos y fotos se guardan en el volumen `api_files`. En Render (plan gratuito) se borran en cada reinicio; en producción real convendría un almacenamiento de objetos como S3.
+- **Notificaciones solo con la pestaña abierta**: usan la API `Notification` del navegador, no Web Push, así que no llegan si el chat está cerrado.
 - **Procesos maestros como root en la API**: los workers de PHP-FPM y Nginx corren como `www-data` y `nginx`, pero sus procesos maestros corren como root dentro del contenedor, y Docker Scout lo señala. La alternativa es mover Nginx a su propio contenedor y ejecutar PHP-FPM con un usuario sin privilegios.
 - **Nginx y PHP-FPM sin supervisor de procesos**: si PHP-FPM se detiene, Nginx mantiene vivo el contenedor. El healthcheck lo detecta y lo marca como `unhealthy`, pero Docker Compose no lo reinicia automáticamente por ese estado.
 - **Parches de seguridad atados al momento del build**: `apk upgrade` aplica los parches disponibles cuando se construye la imagen; para incorporar parches nuevos hay que reconstruir con `--pull --no-cache`.
