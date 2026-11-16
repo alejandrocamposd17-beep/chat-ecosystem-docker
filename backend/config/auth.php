@@ -42,6 +42,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Token Bearer propio (ver AppServiceProvider): sin sesiones ni cookies en la API
+        'api' => [
+            'driver' => 'chat-token',
+            'provider' => 'users',
+        ],
     ],
 
     /*
