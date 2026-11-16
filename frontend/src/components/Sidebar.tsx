@@ -40,6 +40,18 @@ export default function Sidebar({ me, initialConversations }: { me: User; initia
 
   const reload = () => fetchConversations().then(setConversations).catch(() => {});
 
+  /** Notificación del navegador cuando llega un mensaje y no se está viendo ese chat. */
+  function notify(isSelf: boolean, chatId: string, title: string, body: string) {
+    if (isSelf || permission !== "granted") return;
+    if (document.visibilityState === "visible" && chatId === activeId) return;
+    const notification = new Notification(title, { body: body.slice(0, 120), tag: `chat-${chatId}` });
+    notification.onclick = () => {
+      window.focus();
+      router.push(`/chat/${chatId}`);
+      notification.close();
+    };
+  }
+
   useRealtime((event) => {
     switch (event.type) {
       case "message": {
@@ -91,18 +103,6 @@ export default function Sidebar({ me, initialConversations }: { me: User; initia
         break;
     }
   });
-
-  /** Notificación del navegador cuando llega un mensaje y no se está viendo ese chat. */
-  function notify(isSelf: boolean, chatId: string, title: string, body: string) {
-    if (isSelf || permission !== "granted") return;
-    if (document.visibilityState === "visible" && chatId === activeId) return;
-    const notification = new Notification(title, { body: body.slice(0, 120), tag: `chat-${chatId}` });
-    notification.onclick = () => {
-      window.focus();
-      router.push(`/chat/${chatId}`);
-      notification.close();
-    };
-  }
 
   async function enableNotifications() {
     if (!("Notification" in window)) return;
