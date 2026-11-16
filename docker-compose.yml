@@ -30,7 +30,7 @@ services:
   api:
     build:
       context: ./backend
-    image: chat-api:1.0
+    image: chat-api:2.0
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME}
@@ -48,7 +48,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
       SEED_DATABASE: ${SEED_DATABASE:-true}
-      CHAT_SELF_USER_ID: ${CHAT_SELF_USER_ID:-1}
+      CHAT_TOKEN_TTL_DAYS: ${CHAT_TOKEN_TTL_DAYS:-30}
     depends_on:
       db:
         condition: service_healthy
@@ -64,12 +64,11 @@ services:
   web:
     build:
       context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    image: chat-web:1.0
+    image: chat-web:2.0
     restart: unless-stopped
     environment:
-      # Usada por Server Components (red interna de Docker)
+      # El navegador solo habla con Next.js; Next.js llama a la API por la red interna de Docker
+      # (el token de sesión vive en una cookie httpOnly y nunca llega al JavaScript del navegador)
       API_INTERNAL_URL: http://api:8000/api
     depends_on:
       api:

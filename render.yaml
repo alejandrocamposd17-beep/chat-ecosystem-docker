@@ -1,0 +1,52 @@
+# Demo pública en Render (plan gratuito): API Laravel + frontend Next.js.
+# La API usa SQLite dentro del contenedor, así que la demo vuelve a los datos
+# de ejemplo en cada despliegue o reinicio.
+services:
+  - type: web
+    name: chat-ecosystem-api-alejandro
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /up
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: APP_NAME
+        value: Chat API
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: DB_CONNECTION
+        value: sqlite
+      - key: DB_DATABASE
+        value: /var/www/html/database/database.sqlite
+      - key: CACHE_STORE
+        value: database
+      - key: SESSION_DRIVER
+        value: array
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: SEED_DATABASE
+        value: "true"
+      - key: FRONTEND_URL
+        value: https://chat-ecosystem-web-alejandro.onrender.com
+
+  - type: web
+    name: chat-ecosystem-web-alejandro
+    runtime: docker
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3000"
+      # URL pública de la API (Render asigna <nombre-del-servicio>.onrender.com)
+      - key: API_INTERNAL_URL
+        value: https://chat-ecosystem-api-alejandro.onrender.com/api
